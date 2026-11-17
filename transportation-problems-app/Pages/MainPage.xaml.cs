@@ -1,35 +1,159 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 
 namespace transportation_problems_app.Pages
 {
-    /// <summary>
-    /// Логика взаимодействия для MainPage.xaml
-    /// </summary>
     public partial class MainPage : Page
     {
+        // Переменные для фиктивных узлов 
         private bool _IsDummyRes = false;
         private bool _IsDummyNeed = false;
         private double _DummyResValue = 0;
         private double _DummyNeedValue = 0;
 
+        // Переменные для динамической матрицы 
+        private int _rows = 3;
+        private int _cols = 5; 
+
+        private TextBox[,] _cells;      // Тарифы
+        private TextBox[] _supplies;    // Запасы (Reserves)
+        private TextBox[] _demands;     // Потребности (Needs)
+
+
         public MainPage()
         {
             InitializeComponent();
+
+            BuildMatrix();
         }
+
+
+        private void BuildMatrix()
+        {
+            MainGrid.Children.Clear();
+            MainGrid.RowDefinitions.Clear();
+            MainGrid.ColumnDefinitions.Clear();
+
+            _cells = new TextBox[_rows, _cols];
+            _supplies = new TextBox[_rows];
+            _demands = new TextBox[_cols];
+
+            // Колонки
+            MainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Заголовки A
+            for (int j = 0; j < _cols; j++)
+                MainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(75) });
+            MainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) }); // Запасы
+
+            // Строки
+            MainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Заголовки B
+            for (int i = 0; i < _rows; i++)
+                MainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            MainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Потребности
+
+            // Заголовки "Пункты поставки", "Пункты потребления"
+            AddTextBlock("Пункты поставки", 0, 0, true);
+            for (int j = 0; j < _cols; j++) AddTextBlock($"B{j + 1}", 0, j + 1);
+            AddTextBlock("Запасы", 0, _cols + 1, true);
+
+            // Строки A и запасы
+            for (int i = 0; i < _rows; i++)
+            {
+                AddTextBlock($"A{i + 1}", i + 1, 0);
+                _supplies[i] = CreateTextBox(i + 1, _cols + 1);
+            }
+
+            // Строка "Потребности" и значения B
+            AddTextBlock("Потребности", _rows + 1, 0, true);
+            for (int j = 0; j < _cols; j++)
+                _demands[j] = CreateTextBox(_rows + 1, j + 1);
+
+            // Тарифы
+            for (int i = 0; i < _rows; i++)
+                for (int j = 0; j < _cols; j++)
+                    _cells[i, j] = CreateTextBox(i + 1, j + 1);
+        }
+
+
+        private void AddTextBlock(string text, int row, int col, bool isBold = false)
+        {
+            var tb = new TextBlock
+            {
+                Text = text,
+                FontSize = 18,
+                FontWeight = isBold ? FontWeights.Bold : FontWeights.Normal,
+                Margin = new Thickness(5),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetRow(tb, row);
+            Grid.SetColumn(tb, col);
+            MainGrid.Children.Add(tb);
+        }
+        private TextBox CreateTextBox(int row, int col)
+        {
+            var txt = new TextBox { VerticalContentAlignment = VerticalAlignment.Center, FontSize = 14, Margin = new Thickness(3) };
+            txt.PreviewTextInput += NumberTextBox_PreviewTextInput;
+            Grid.SetRow(txt, row);
+            Grid.SetColumn(txt, col);
+            MainGrid.Children.Add(txt);
+            return txt;
+        }
+
+
+        private void AddRowBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (_rows >= 10) return;
+            SaveCurrentData(out var c, out var s, out var d);
+            _rows++; BuildMatrix(); LoadData(c, s, d);
+        }
+        private void RemoveRowBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (_rows <= 1) return;
+            SaveCurrentData(out var c, out var s, out var d);
+            _rows--; BuildMatrix(); LoadData(c, s, d);
+        }
+        private void AddColBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (_cols >= 10) return;
+            SaveCurrentData(out var c, out var s, out var d);
+            _cols++; BuildMatrix(); LoadData(c, s, d);
+        }
+        private void RemoveColBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (_cols <= 1) return;
+            SaveCurrentData(out var c, out var s, out var d);
+            _cols--; BuildMatrix(); LoadData(c, s, d);
+        }
+
+
+        private void SaveCurrentData(out string[,] cells, out string[] sup, out string[] dem)
+        {
+            cells = new string[_rows, _cols];
+            sup = new string[_rows];
+            dem = new string[_cols];
+
+            for (int i = 0; i < _rows; i++)
+            {
+                sup[i] = _supplies[i].Text;
+                for (int j = 0; j < _cols; j++) cells[i, j] = _cells[i, j].Text;
+            }
+            for (int j = 0; j < _cols; j++) dem[j] = _demands[j].Text;
+        }
+        private void LoadData(string[,] oldCells, string[] oldSup, string[] oldDem)
+        {
+            for (int i = 0; i < _rows; i++)
+            {
+                if (i < oldSup.Length) _supplies[i].Text = oldSup[i];
+                for (int j = 0; j < _cols; j++)
+                    if (i < oldCells.GetLength(0) && j < oldCells.GetLength(1)) _cells[i, j].Text = oldCells[i, j];
+            }
+            for (int j = 0; j < _cols; j++)
+                if (j < oldDem.Length) _demands[j].Text = oldDem[j];
+        }
+
 
         private void NumberTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
         {
@@ -39,76 +163,121 @@ namespace transportation_problems_app.Pages
 
             e.Handled = !IsValidDecimal(futureText);
         }
-
         private bool IsValidDecimal(string text)
         {
             if (string.IsNullOrEmpty(text)) return true;
-
             if (text.Contains(" ")) return false;
 
             string normalizedText = text.Replace(',', '.');
-
             return double.TryParse(normalizedText, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out _);
         }
 
-        private void ClearBtn_Click(object sender, RoutedEventArgs e)
+
+        private double[,] SolveNorthWest(double[] originalSupplies, double[] originalDemands, int rows, int cols)
         {
-            A1B1.Clear();
-            A1B2.Clear();
-            A1B3.Clear();
-            A1B4.Clear();
-            A1B5.Clear();
-            A2B1.Clear();
-            A2B2.Clear();
-            A2B3.Clear();
-            A2B4.Clear();
-            A2B5.Clear();
-            A3B1.Clear();
-            A3B2.Clear();
-            A3B3.Clear();
-            A3B4.Clear();
-            A3B5.Clear();
+            double[,] allocation = new double[rows, cols];
 
-            NeedsB1.Clear();
-            NeedsB2.Clear();
-            NeedsB3.Clear();
-            NeedsB4.Clear();
-            NeedsB5.Clear();
+            double[] supplies = (double[])originalSupplies.Clone();
+            double[] demands = (double[])originalDemands.Clone();
 
-            ReservesA1.Clear();
-            ReservesA2.Clear();
-            ReservesA3.Clear();
-        }
+            int i = 0; // Индекс строки (поставщик)
+            int j = 0; // Индекс столбца (потребитель)
 
-        private void SolveBtn_Click(object sender, RoutedEventArgs e)
-        {
-            if (string.IsNullOrWhiteSpace(A1B1.Text) || string.IsNullOrWhiteSpace(A1B2.Text) || string.IsNullOrWhiteSpace(A1B3.Text) || string.IsNullOrWhiteSpace(A1B4.Text) || string.IsNullOrWhiteSpace(A1B5.Text) ||
-                string.IsNullOrWhiteSpace(A2B1.Text) || string.IsNullOrWhiteSpace(A2B2.Text) || string.IsNullOrWhiteSpace(A2B3.Text) || string.IsNullOrWhiteSpace(A2B4.Text) || string.IsNullOrWhiteSpace(A2B5.Text) ||
-                string.IsNullOrWhiteSpace(A3B1.Text) || string.IsNullOrWhiteSpace(A3B2.Text) || string.IsNullOrWhiteSpace(A3B3.Text) || string.IsNullOrWhiteSpace(A3B4.Text) || string.IsNullOrWhiteSpace(A3B5.Text) ||
-                string.IsNullOrWhiteSpace(NeedsB1.Text) || string.IsNullOrWhiteSpace(NeedsB2.Text) || string.IsNullOrWhiteSpace(NeedsB3.Text) || string.IsNullOrWhiteSpace(NeedsB4.Text) || string.IsNullOrWhiteSpace(NeedsB5.Text) ||
-                string.IsNullOrWhiteSpace(ReservesA1.Text) || string.IsNullOrWhiteSpace(ReservesA2.Text) || string.IsNullOrWhiteSpace(ReservesA3.Text))
+            while (i < rows && j < cols)
             {
-                MessageBox.Show(Application.Current.MainWindow,
-                    "Заполните все поля!",
-                    "Ошибка",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error
-                );
+                double amount = Math.Min(supplies[i], demands[j]);
+                allocation[i, j] = amount;
+
+                supplies[i] -= amount;
+                demands[j] -= amount;
+
+                // Так как мы работаем с дробными числами, используем погрешность для сравнения с нулем
+                bool supplyEmpty = Math.Abs(supplies[i]) < 0.0001;
+                bool demandEmpty = Math.Abs(demands[j]) < 0.0001;
+
+                if (supplyEmpty && demandEmpty)
+                {
+                    i++;
+                    j++;
+                }
+                else if (supplyEmpty)
+                {
+                    i++;
+                }
+                else if (demandEmpty)
+                {
+                    j++;
+                }
             }
 
-            double ResA1 = Convert.ToDouble(ReservesA1.Text);
-            double ResA2 = Convert.ToDouble(ReservesA2.Text);
-            double ResA3 = Convert.ToDouble(ReservesA3.Text);
+            return allocation;
+        }
 
-            double NeedB1 = Convert.ToDouble(NeedsB1.Text);
-            double NeedB2 = Convert.ToDouble(NeedsB2.Text);
-            double NeedB3 = Convert.ToDouble(NeedsB3.Text);
-            double NeedB4 = Convert.ToDouble(NeedsB4.Text);
-            double NeedB5 = Convert.ToDouble(NeedsB5.Text);
 
-            double ResSum = ResA1 + ResA2 + ResA3;
-            double NeedSum = NeedB1 + NeedB2 + NeedB3 + NeedB4 + NeedB5;
+        private void ClearBtn_Click(object sender, RoutedEventArgs e)
+        {
+            for (int i = 0; i < _rows; i++)
+            {
+                _supplies[i].Clear();
+                for (int j = 0; j < _cols; j++)
+                    _cells[i, j].Clear();
+            }
+            for (int j = 0; j < _cols; j++)
+                _demands[j].Clear();
+        }
+        private void SolveBtn_Click(object sender, RoutedEventArgs e)
+        {
+            // 1. Проверка на пустые поля
+            for (int i = 0; i < _rows; i++)
+            {
+                if (string.IsNullOrWhiteSpace(_supplies[i].Text))
+                {
+                    MessageBox.Show(Application.Current.MainWindow, "Заполните все поля (Запасы)!", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+                for (int j = 0; j < _cols; j++)
+                {
+                    if (string.IsNullOrWhiteSpace(_cells[i, j].Text))
+                    {
+                        MessageBox.Show(Application.Current.MainWindow, "Заполните все поля (Тарифы)!", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+                }
+            }
+            for (int j = 0; j < _cols; j++)
+            {
+                if (string.IsNullOrWhiteSpace(_demands[j].Text))
+                {
+                    MessageBox.Show(Application.Current.MainWindow, "Заполните все поля (Потребности)!", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+            }
 
+            // 2. Сбор данных
+            double[] supplies = new double[_rows];
+            double[] demands = new double[_cols];
+            double[,] costs = new double[_rows, _cols];
+
+            double ResSum = 0;
+            double NeedSum = 0;
+
+            for (int i = 0; i < _rows; i++)
+            {
+                supplies[i] = Convert.ToDouble(_supplies[i].Text);
+                ResSum += supplies[i];
+                for (int j = 0; j < _cols; j++)
+                {
+                    costs[i, j] = Convert.ToDouble(_cells[i, j].Text);
+                }
+            }
+
+            for (int j = 0; j < _cols; j++)
+            {
+                demands[j] = Convert.ToDouble(_demands[j].Text);
+                NeedSum += demands[j];
+            }
+
+            // 3. Проверка баланса 
             if (ResSum == NeedSum)
             {
                 MessageBox.Show(Application.Current.MainWindow,
@@ -118,7 +287,7 @@ namespace transportation_problems_app.Pages
                     MessageBoxImage.Information
                 );
             }
-            else 
+            else
             {
                 string message;
                 if (ResSum < NeedSum)
@@ -127,7 +296,7 @@ namespace transportation_problems_app.Pages
                     _IsDummyRes = true;
                     message = $"Матрица была не сбалансирована, добавлен фиктивный поставщик со значением: {_DummyResValue}";
                 }
-                else 
+                else
                 {
                     _DummyNeedValue = ResSum - NeedSum;
                     _IsDummyNeed = true;
@@ -140,6 +309,14 @@ namespace transportation_problems_app.Pages
                     MessageBoxButton.OK,
                     MessageBoxImage.Information
                 );
+            }
+
+            double[,] allocationMatrix = new double[_rows, _cols];
+
+            if (MethodComboBox.SelectedIndex == 0) 
+            {
+                double[,] resultMatrix = SolveNorthWest(supplies, demands, _rows, _cols);
+                // Вывод в MessageBox
             }
         }
     }
