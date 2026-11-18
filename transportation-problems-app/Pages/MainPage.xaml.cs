@@ -1,5 +1,8 @@
-﻿using System;
+﻿using ClosedXML.Excel;
+using Microsoft.Win32;
+using System;
 using System.Globalization;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -212,7 +215,97 @@ namespace transportation_problems_app.Pages
 
             return allocation;
         }
+        private double GetShippingQuote(double[,] pricesMatrix, double[,] answerMatrix, int rows, int cols) 
+        {
+            double shippingQuote = 0.0;
 
+            for (int i = 0; i < rows; i++) 
+            {
+                for (int j = 0; j < cols; j++) 
+                {
+                    shippingQuote += pricesMatrix[i,j] * answerMatrix[i,j];
+                }
+            }
+
+            return shippingQuote;
+        }
+        private void ExportToExcel(double[,] resultMatrix, double[] supplies, double[] demands, double shippingQuote) 
+        {
+            string methodShortName = MethodComboBox.SelectedIndex == 0 ? "Метод Северо-западного угла" : "Метод минимальных элементов";
+
+            SaveFileDialog sfd = new SaveFileDialog
+            {
+                Filter = "Excel Files|*xlsx",
+                FileName = $"Результат транспортной задачи. {methodShortName}.xlsx"
+            };
+
+            if (sfd.ShowDialog() == true)
+            {
+                try
+                {
+                    using (var workbook = new XLWorkbook())
+                    {
+                        var ws = workbook.Worksheets.Add("Опорный план");
+
+                        // Заголовки
+                        ws.Range("A1:A2").Merge().Value = "Пункты поставки";
+                        ws.Range(1, 2, 1, _cols + 1).Merge().Value = "Пункты потребления"; // B1:F1
+                        ws.Range(1, _cols + 2, 2, _cols + 2).Merge().Value = "Запасы";     // G1:G2
+
+                        // Заголовки B1, B2... (Строка 2)
+                        for (int j = 0; j < _cols; j++)
+                        {
+                            ws.Cell(2, j + 2).Value = $"B{j + 1}";
+                        }
+
+                        // Заполнение данными
+                        for (int i = 0; i < _rows; i++)
+                        {
+                            ws.Cell(i + 3, 1).Value = $"A{i + 1}";
+
+                            for (int j = 0; j < _cols; j++)
+                            {
+                                ws.Cell(i + 3, j + 2).Value = resultMatrix[i, j];
+                            }
+
+                            ws.Cell(i + 3, _cols + 2).Value = supplies[i];
+                        }
+
+                        int demandRow = _rows + 3;
+                        ws.Cell(demandRow, 1).Value = "Потребности";
+
+                        for (int j = 0; j < _cols; j++)
+                        {
+                            ws.Cell(demandRow, j + 2).Value = demands[j];
+                        }
+
+                        ws.Cell(demandRow, _cols + 2).Value = shippingQuote;
+
+                        // Стилизация
+                        var tableRange = ws.Range(1, 1, demandRow, _cols + 2);
+
+                        tableRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                        tableRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+                        tableRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                        tableRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+
+                        ws.Range("A1:A2").Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
+
+                        ws.Range(3, 2, demandRow, _cols + 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
+                        ws.Columns().AdjustToContents();
+
+                        workbook.SaveAs(sfd.FileName);
+                    }
+                    MessageBox.Show("Файл успешно сохранен!", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка при сохранении: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
 
         private void ClearBtn_Click(object sender, RoutedEventArgs e)
         {
@@ -270,7 +363,6 @@ namespace transportation_problems_app.Pages
                     costs[i, j] = Convert.ToDouble(_cells[i, j].Text);
                 }
             }
-
             for (int j = 0; j < _cols; j++)
             {
                 demands[j] = Convert.ToDouble(_demands[j].Text);
@@ -316,7 +408,40 @@ namespace transportation_problems_app.Pages
             if (MethodComboBox.SelectedIndex == 0) 
             {
                 double[,] resultMatrix = SolveNorthWest(supplies, demands, _rows, _cols);
-                // Вывод в MessageBox
+                double shippingQuote = Math.Round((GetShippingQuote(costs, resultMatrix, _rows, _cols)), 2);
+
+                var sb = new StringBuilder();
+                sb.AppendLine("Опорный план перевозок:\n");
+
+                // Находим максимальную ширину числа для красивого выравнивания
+                int maxWidth = 3;
+                for (int i = 0; i < _rows; i++)
+                    for (int j = 0; j < _cols; j++)
+                        maxWidth = Math.Max(maxWidth, resultMatrix[i, j].ToString().Length);
+
+                for (int i = 0; i < _rows; i++)
+                {
+                    sb.Append("│ ");
+                    for (int j = 0; j < _cols; j++)
+                    {
+                        string val = resultMatrix[i, j] == 0 ? "—" : resultMatrix[i, j].ToString();
+                        sb.Append(val.PadLeft(maxWidth));
+
+                        if (j < _cols - 1)
+                            sb.Append("   ");
+                    }
+                    sb.AppendLine(" │");
+                }
+
+                sb.AppendLine($"\nОбщая стоимость перевозок: {shippingQuote:N0} у.е.");
+
+                MessageBox.Show(Application.Current.MainWindow, sb.ToString(), "Результат расчёта", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                var result = MessageBox.Show(Application.Current.MainWindow, "Выгпрузить итоговый результат в Excel?", "Выгрузка", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (result == MessageBoxResult.Yes) 
+                {
+                    ExportToExcel(resultMatrix, supplies, demands, shippingQuote);
+                }
             }
         }
     }
