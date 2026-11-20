@@ -295,36 +295,34 @@ namespace transportation_problems_app.Pages
 
             return shippingQuote;
         }
-        private void PrintAnswerMessageBox(double[,] resultMatrix, double shippingQuote)
+        private void PrintAnswerMessageBox(double[,] resultMatrix, double shippingQuote, int rows, int cols)
         {
             var sb = new StringBuilder();
             sb.AppendLine("Опорный план перевозок:\n");
 
-            // Находим максимальную ширину числа для красивого выравнивания
             int maxWidth = 3;
-            for (int i = 0; i < _rows; i++)
-                for (int j = 0; j < _cols; j++)
+            for (int i = 0; i < rows; i++)
+                for (int j = 0; j < cols; j++) 
                     maxWidth = Math.Max(maxWidth, resultMatrix[i, j].ToString().Length);
 
-            for (int i = 0; i < _rows; i++)
+            for (int i = 0; i < rows; i++) 
             {
                 sb.Append("│ ");
-                for (int j = 0; j < _cols; j++)
+                for (int j = 0; j < cols; j++) 
                 {
                     string val = resultMatrix[i, j] == 0 ? "—" : resultMatrix[i, j].ToString();
                     sb.Append(val.PadLeft(maxWidth));
 
-                    if (j < _cols - 1)
+                    if (j < cols - 1) 
                         sb.Append("   ");
                 }
                 sb.AppendLine(" │");
             }
 
             sb.AppendLine($"\nОбщая стоимость перевозок: {shippingQuote:N0} у.е.");
-
             MessageBox.Show(Application.Current.MainWindow, sb.ToString(), "Результат расчёта", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        private void ExportToExcel(double[,] resultMatrix, double[] supplies, double[] demands, double shippingQuote) 
+        private void ExportToExcel(double[,] resultMatrix, double[] supplies, double[] demands, double shippingQuote, int rows, int cols)
         {
             string methodShortName = MethodComboBox.SelectedIndex == 0 ? "Метод Северо-западного угла" : "Метод минимальных элементов";
 
@@ -342,42 +340,41 @@ namespace transportation_problems_app.Pages
                     {
                         var ws = workbook.Worksheets.Add("Опорный план");
 
-                        // Заголовки
+                        // Заголовки 
                         ws.Range("A1:A2").Merge().Value = "Пункты поставки";
-                        ws.Range(1, 2, 1, _cols + 1).Merge().Value = "Пункты потребления"; // B1:F1
-                        ws.Range(1, _cols + 2, 2, _cols + 2).Merge().Value = "Запасы";     // G1:G2
+                        ws.Range(1, 2, 1, cols + 1).Merge().Value = "Пункты потребления";
+                        ws.Range(1, cols + 2, 2, cols + 2).Merge().Value = "Запасы";
 
-                        // Заголовки B1, B2... (Строка 2)
-                        for (int j = 0; j < _cols; j++)
+                        for (int j = 0; j < cols; j++)
                         {
                             ws.Cell(2, j + 2).Value = $"B{j + 1}";
                         }
 
-                        // Заполнение данными
-                        for (int i = 0; i < _rows; i++)
+                        // Заполнение 
+                        for (int i = 0; i < rows; i++)
                         {
                             ws.Cell(i + 3, 1).Value = $"A{i + 1}";
 
-                            for (int j = 0; j < _cols; j++)
+                            for (int j = 0; j < cols; j++)
                             {
                                 ws.Cell(i + 3, j + 2).Value = resultMatrix[i, j];
                             }
 
-                            ws.Cell(i + 3, _cols + 2).Value = supplies[i];
+                            ws.Cell(i + 3, cols + 2).Value = supplies[i];
                         }
 
-                        int demandRow = _rows + 3;
+                        int demandRow = rows + 3;
                         ws.Cell(demandRow, 1).Value = "Потребности";
 
-                        for (int j = 0; j < _cols; j++)
+                        for (int j = 0; j < cols; j++)
                         {
                             ws.Cell(demandRow, j + 2).Value = demands[j];
                         }
 
-                        ws.Cell(demandRow, _cols + 2).Value = shippingQuote;
+                        ws.Cell(demandRow, cols + 2).Value = shippingQuote;
 
-                        // Стилизация
-                        var tableRange = ws.Range(1, 1, demandRow, _cols + 2);
+                        // Стилизация 
+                        var tableRange = ws.Range(1, 1, demandRow, cols + 2);
 
                         tableRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
                         tableRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
@@ -386,8 +383,7 @@ namespace transportation_problems_app.Pages
                         tableRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
 
                         ws.Range("A1:A2").Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
-
-                        ws.Range(3, 2, demandRow, _cols + 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                        ws.Range(3, 2, demandRow, cols + 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
                         ws.Columns().AdjustToContents();
 
@@ -466,7 +462,14 @@ namespace transportation_problems_app.Pages
             }
 
             // 3. Проверка баланса 
-            if (ResSum == NeedSum)
+            int calcRows = _rows;
+            int calcCols = _cols;
+            double[] calcSupplies = (double[])supplies.Clone();
+            double[] calcDemands = (double[])demands.Clone();
+            double[,] calcCosts = (double[,])costs.Clone();
+
+            // Сравниваем с погрешностью для double
+            if (Math.Abs(ResSum - NeedSum) < 0.0001)
             {
                 MessageBox.Show(Application.Current.MainWindow,
                     "Матрица сбалансирована!",
@@ -483,12 +486,36 @@ namespace transportation_problems_app.Pages
                     _DummyResValue = NeedSum - ResSum;
                     _IsDummyRes = true;
                     message = $"Матрица была не сбалансирована, добавлен фиктивный поставщик со значением: {_DummyResValue}";
+
+                    // Добавляем фиктивную строку (поставщика)
+                    calcRows++;
+                    calcSupplies = new double[calcRows];
+                    Array.Copy(supplies, calcSupplies, _rows);
+                    calcSupplies[calcRows - 1] = _DummyResValue;
+
+                    calcCosts = new double[calcRows, calcCols];
+                    for (int i = 0; i < _rows; i++)
+                        for (int j = 0; j < _cols; j++)
+                            calcCosts[i, j] = costs[i, j];
+                    // Для фиктивного поставщика тарифы  0.0 
                 }
                 else
                 {
                     _DummyNeedValue = ResSum - NeedSum;
                     _IsDummyNeed = true;
                     message = $"Матрица была не сбалансирована, добавлен фиктивный потребитель со значением: {_DummyNeedValue}";
+
+                    // Добавляем фиктивный столбец (потребителя)
+                    calcCols++;
+                    calcDemands = new double[calcCols];
+                    Array.Copy(demands, calcDemands, _cols);
+                    calcDemands[calcCols - 1] = _DummyNeedValue;
+
+                    calcCosts = new double[calcRows, calcCols];
+                    for (int i = 0; i < _rows; i++)
+                        for (int j = 0; j < _cols; j++)
+                            calcCosts[i, j] = costs[i, j];
+                    // Для фиктивного потребителя тарифы 0.0
                 }
 
                 MessageBox.Show(Application.Current.MainWindow,
@@ -499,24 +526,25 @@ namespace transportation_problems_app.Pages
                 );
             }
 
-            double[,] resultMatrix = new double[_rows, _cols];
+            // 4. Вызов алгоритмов с сбалансированными массивами
+            double[,] resultMatrix;
             if (MethodComboBox.SelectedIndex == 0)
             {
-                resultMatrix = SolveNorthWest(supplies, demands, _rows, _cols);
+                resultMatrix = SolveNorthWest(calcSupplies, calcDemands, calcRows, calcCols);
             }
-            else 
+            else
             {
-                resultMatrix = SolveMinElems(costs, supplies, demands, _rows, _cols);
+                resultMatrix = SolveMinElems(calcCosts, calcSupplies, calcDemands, calcRows, calcCols);
             }
 
-            double shippingQuote = Math.Round((GetShippingQuote(costs, resultMatrix, _rows, _cols)), 2);
+            double shippingQuote = Math.Round(GetShippingQuote(calcCosts, resultMatrix, calcRows, calcCols), 2);
 
-            PrintAnswerMessageBox(resultMatrix, shippingQuote);
+            PrintAnswerMessageBox(resultMatrix, shippingQuote, calcRows, calcCols);
 
-            var result = MessageBox.Show(Application.Current.MainWindow, "Выгпрузить итоговый результат в Excel?", "Выгрузка", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            var result = MessageBox.Show(Application.Current.MainWindow, "Выгрузить итоговый результат в Excel?", "Выгрузка", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (result == MessageBoxResult.Yes)
             {
-                ExportToExcel(resultMatrix, supplies, demands, shippingQuote);
+                ExportToExcel(resultMatrix, calcSupplies, calcDemands, shippingQuote, calcRows, calcCols);
             }
         }
     }
