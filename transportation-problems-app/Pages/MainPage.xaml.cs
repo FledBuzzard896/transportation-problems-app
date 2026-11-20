@@ -1,7 +1,9 @@
 ﻿using ClosedXML.Excel;
+using DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.Win32;
 using System;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -9,7 +11,7 @@ using System.Windows.Input;
 
 namespace transportation_problems_app.Pages
 {
-    public partial class MainPage : Page
+    public partial class MainPage : System.Windows.Controls.Page
     {
         // Переменные для фиктивных узлов 
         private bool _IsDummyRes = false;
@@ -176,6 +178,68 @@ namespace transportation_problems_app.Pages
         }
 
 
+        private double[,] SolveMinElems(double[,] originalMatrix, double[] originalSupplies, double[] originalDemands, int rows, int cols)
+        {
+            double[,] allocation = new double[rows, cols];
+
+            double[,] matrix = (double[,])originalMatrix.Clone();
+            double[] supplies = (double[])originalSupplies.Clone();
+            double[] demands = (double[])originalDemands.Clone();
+
+            while (supplies.Any(x => Math.Abs(x) > 0.0001))
+            {
+                double minElem = double.MaxValue;
+                int i = -1, j = -1;
+
+                // 1. Ищем минимальный тариф среди активных (невычеркнутых) ячеек
+                for (int r = 0; r < rows; r++)
+                {
+                    if (Math.Abs(supplies[r]) < 0.0001) continue; // Пропускаем пустые строки
+
+                    for (int c = 0; c < cols; c++)
+                    {
+                        if (Math.Abs(demands[c]) < 0.0001) continue; // Пропускаем закрытые столбцы
+
+                        if (matrix[r, c] < minElem)
+                        {
+                            minElem = matrix[r, c];
+                            i = r;
+                            j = c;
+                        }
+                    }
+                }
+
+                if (i == -1 || j == -1) break;
+
+                // 2. Распределяем груз и вычеркиваем строку/столбец
+                if (supplies[i] > demands[j])
+                {
+                    allocation[i, j] = demands[j];
+                    supplies[i] -= demands[j];
+                    demands[j] = 0;
+
+                    // Вычеркиваем столбец j
+                    for (int r = 0; r < rows; r++)
+                    {
+                        matrix[r, j] = double.MaxValue;
+                    }
+                }
+                else
+                {
+                    allocation[i, j] = supplies[i];
+                    demands[j] -= supplies[i];
+                    supplies[i] = 0;
+
+                    // Вычеркиваем строку i
+                    for (int c = 0; c < cols; c++)
+                    {
+                        matrix[i, c] = double.MaxValue;
+                    }
+                }
+            }
+
+            return allocation;
+        }
         private double[,] SolveNorthWest(double[] originalSupplies, double[] originalDemands, int rows, int cols)
         {
             double[,] allocation = new double[rows, cols];
@@ -215,6 +279,8 @@ namespace transportation_problems_app.Pages
 
             return allocation;
         }
+
+
         private double GetShippingQuote(double[,] pricesMatrix, double[,] answerMatrix, int rows, int cols) 
         {
             double shippingQuote = 0.0;
@@ -228,6 +294,35 @@ namespace transportation_problems_app.Pages
             }
 
             return shippingQuote;
+        }
+        private void PrintAnswerMessageBox(double[,] resultMatrix, double shippingQuote)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("Опорный план перевозок:\n");
+
+            // Находим максимальную ширину числа для красивого выравнивания
+            int maxWidth = 3;
+            for (int i = 0; i < _rows; i++)
+                for (int j = 0; j < _cols; j++)
+                    maxWidth = Math.Max(maxWidth, resultMatrix[i, j].ToString().Length);
+
+            for (int i = 0; i < _rows; i++)
+            {
+                sb.Append("│ ");
+                for (int j = 0; j < _cols; j++)
+                {
+                    string val = resultMatrix[i, j] == 0 ? "—" : resultMatrix[i, j].ToString();
+                    sb.Append(val.PadLeft(maxWidth));
+
+                    if (j < _cols - 1)
+                        sb.Append("   ");
+                }
+                sb.AppendLine(" │");
+            }
+
+            sb.AppendLine($"\nОбщая стоимость перевозок: {shippingQuote:N0} у.е.");
+
+            MessageBox.Show(Application.Current.MainWindow, sb.ToString(), "Результат расчёта", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         private void ExportToExcel(double[,] resultMatrix, double[] supplies, double[] demands, double shippingQuote) 
         {
@@ -306,6 +401,7 @@ namespace transportation_problems_app.Pages
                 }
             }
         }
+
 
         private void ClearBtn_Click(object sender, RoutedEventArgs e)
         {
@@ -403,45 +499,24 @@ namespace transportation_problems_app.Pages
                 );
             }
 
-            double[,] allocationMatrix = new double[_rows, _cols];
-
-            if (MethodComboBox.SelectedIndex == 0) 
+            double[,] resultMatrix = new double[_rows, _cols];
+            if (MethodComboBox.SelectedIndex == 0)
             {
-                double[,] resultMatrix = SolveNorthWest(supplies, demands, _rows, _cols);
-                double shippingQuote = Math.Round((GetShippingQuote(costs, resultMatrix, _rows, _cols)), 2);
+                resultMatrix = SolveNorthWest(supplies, demands, _rows, _cols);
+            }
+            else 
+            {
+                resultMatrix = SolveMinElems(costs, supplies, demands, _rows, _cols);
+            }
 
-                var sb = new StringBuilder();
-                sb.AppendLine("Опорный план перевозок:\n");
+            double shippingQuote = Math.Round((GetShippingQuote(costs, resultMatrix, _rows, _cols)), 2);
 
-                // Находим максимальную ширину числа для красивого выравнивания
-                int maxWidth = 3;
-                for (int i = 0; i < _rows; i++)
-                    for (int j = 0; j < _cols; j++)
-                        maxWidth = Math.Max(maxWidth, resultMatrix[i, j].ToString().Length);
+            PrintAnswerMessageBox(resultMatrix, shippingQuote);
 
-                for (int i = 0; i < _rows; i++)
-                {
-                    sb.Append("│ ");
-                    for (int j = 0; j < _cols; j++)
-                    {
-                        string val = resultMatrix[i, j] == 0 ? "—" : resultMatrix[i, j].ToString();
-                        sb.Append(val.PadLeft(maxWidth));
-
-                        if (j < _cols - 1)
-                            sb.Append("   ");
-                    }
-                    sb.AppendLine(" │");
-                }
-
-                sb.AppendLine($"\nОбщая стоимость перевозок: {shippingQuote:N0} у.е.");
-
-                MessageBox.Show(Application.Current.MainWindow, sb.ToString(), "Результат расчёта", MessageBoxButton.OK, MessageBoxImage.Information);
-
-                var result = MessageBox.Show(Application.Current.MainWindow, "Выгпрузить итоговый результат в Excel?", "Выгрузка", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (result == MessageBoxResult.Yes) 
-                {
-                    ExportToExcel(resultMatrix, supplies, demands, shippingQuote);
-                }
+            var result = MessageBox.Show(Application.Current.MainWindow, "Выгпрузить итоговый результат в Excel?", "Выгрузка", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result == MessageBoxResult.Yes)
+            {
+                ExportToExcel(resultMatrix, supplies, demands, shippingQuote);
             }
         }
     }
